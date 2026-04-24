@@ -5,7 +5,8 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import httpx
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from instagrapi import Client as InstaClient
 from linkedin_api import Linkedin
@@ -51,7 +52,7 @@ CONTENT_TOPICS = [
     "ArbCore, E-Estate, Smart Bot : 3 façons concrètes de créer des revenus passifs avec la technologie blockchain.",
 ]
 
-genai.configure(api_key=GEMINI_API_KEY)
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ─── NOTIFICATION TELEGRAM ───────────────────────────────────────────────────
 async def notify_john(message: str):
@@ -90,16 +91,31 @@ async def generate_post(platform: str) -> str:
             "Hashtags : #Investissement #LiberteFinanciere\n"
             "Ton : direct, percutant, inspirant."
         )
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = await asyncio.to_thread(model.generate_content, prompt)
+    response = await asyncio.to_thread(
+        lambda: gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+    )
     return response.text.strip()
 
 # ─── LINKEDIN ─────────────────────────────────────────────────────────────────
+def get_linkedin_api():
+    cookies_file = "/tmp/linkedin_cookies.json"
+    try:
+        if os.path.exists(cookies_file):
+            api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD, cookies=cookies_file)
+        else:
+            api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
+        return api
+    except Exception:
+        return Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
+
 async def linkedin_post():
     try:
         content = await generate_post("LinkedIn")
-        api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
-        api.post(content)
+        api = await asyncio.to_thread(get_linkedin_api)
+        await asyncio.to_thread(api.post, content)
         logger.info("LinkedIn post publié")
         await notify_john(f"✅ *LinkedIn* — Post publié :\n\n{content[:300]}")
     except Exception as e:
@@ -108,9 +124,9 @@ async def linkedin_post():
 
 async def linkedin_prospect():
     try:
-        api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
+        api = await asyncio.to_thread(get_linkedin_api)
         keyword = random.choice(KEYWORDS_LINKEDIN)
-        people = api.search_people(keywords=keyword, limit=PROSPECTS_PER_DAY * 2)
+        people = await asyncio.to_thread(api.search_people, keyword, PROSPECTS_PER_DAY * 2)
         count = 0
         for person in people:
             if count >= PROSPECTS_PER_DAY:
