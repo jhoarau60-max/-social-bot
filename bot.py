@@ -136,8 +136,7 @@ async def linkedin_prospect():
                 prenom = person.get("firstName", "vous")
                 if not profile_id:
                     continue
-                message = MESSAGE_PROSPECT.format(prenom=prenom)
-                api.add_connection(profile_id, message=message[:300])
+                api.add_connection(profile_id)
                 count += 1
                 logger.info(f"LinkedIn invitation envoyée à {prenom}")
                 await asyncio.sleep(random.uniform(40, 90))
