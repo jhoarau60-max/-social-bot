@@ -28,7 +28,7 @@ TWITTER_PASSWORD   = os.environ.get("TWITTER_PASSWORD")
 
 JOHN_ID        = 7385702412
 PARIS_TZ       = ZoneInfo("Europe/Paris")
-PROSPECTS_PER_DAY = 10
+PROSPECTS_PER_DAY = 5
 
 MESSAGE_PROSPECT = (
     "Bonjour {prenom} 👋 Je tombe sur votre profil et je vois qu'on partage "
@@ -258,10 +258,10 @@ async def main():
     scheduler.add_job(instagram_post,   'cron', hour=12, minute=0)
     scheduler.add_job(twitter_post,     'cron', hour=18, minute=0)
 
-    # Prospecting quotidien
-    scheduler.add_job(linkedin_prospect,  'cron', hour=9,  minute=30)
-    scheduler.add_job(instagram_prospect, 'cron', hour=14, minute=0)
-    scheduler.add_job(twitter_prospect,   'cron', hour=16, minute=0)
+    # Prospecting tous les 3 jours
+    scheduler.add_job(linkedin_prospect,  'interval', days=3, start_date='2026-04-25 09:30:00')
+    scheduler.add_job(instagram_prospect, 'interval', days=3, start_date='2026-04-25 14:00:00')
+    scheduler.add_job(twitter_prospect,   'interval', days=3, start_date='2026-04-25 16:00:00')
 
     scheduler.start()
     logger.info("✅ Bot Réseaux Sociaux Project Inves'T démarré !")
