@@ -364,6 +364,137 @@ async def instagram_prospect():
         logger.error(f"Erreur Instagram prospecting: {e}")
         await notify_john(f"❌ *Instagram* prospecting erreur: {str(e)[:200]}")
 
+# ─── INSTAGRAM STORIES ───────────────────────────────────────────────────────
+
+STORY_QUIZ_LIST = [
+    {"question": "Tu veux des revenus passifs ?",      "oui": "Absolument !",       "non": "Pas encore"},
+    {"question": "Tu connais l'immobilier tokenisé ?", "oui": "Oui j'investis",     "non": "Non c'est quoi ?"},
+    {"question": "Tu investis déjà en crypto ?",       "oui": "Oui régulièrement",  "non": "Non j'hésite"},
+    {"question": "Objectif : liberté financière ?",    "oui": "C'est mon but !",    "non": "J'ai d'autres priorités"},
+    {"question": "Tu veux un revenu automatique ?",    "oui": "Oui montrez-moi !",  "non": "J'ai des questions"},
+]
+
+STORY_PROJECTS_LIST = [
+    {"nom": "E-Estate",       "desc": "Immobilier tokenisé dès 10$\n0.41% à 1% par jour 💰",   "lien": "https://www.e-estate.co/agent/953277721577",    "bg": (10, 40, 120)},
+    {"nom": "Smart MEV Bot",  "desc": "Trading IA automatique 24h/24\nBot accessible dès 49$ 🤖", "lien": "https://xmev.ai?inviteCode=QVKB8JNC",           "bg": (50, 10, 120)},
+    {"nom": "ArbCore",        "desc": "Arbitrage crypto automatique\n1.07% par jour dès 50 USDT ⚡", "lien": "https://arbcore.app/?frenID=IFK2MAN6",       "bg": (10, 90, 50)},
+    {"nom": "Artena",         "desc": "Club DeFi privé exclusif\nPass dès 50$ 🔥",               "lien": "https://artena.pro/r/jonas05",                  "bg": (110, 40, 10)},
+]
+
+STORY_INSPIRATIONS = [
+    "En 2026, ne pas investir c'est perdre chaque jour avec l'inflation 💡",
+    "La liberté financière n'est pas un rêve — c'est une stratégie 🚀",
+    "Pendant que tu dors, ton argent peut travailler pour toi 💤💰",
+    "On peut acheter une part d'immeuble à Miami pour 10$ — l'immobilier tokenisé change tout 🏙️",
+    "Le meilleur moment pour investir c'était hier. Le deuxième meilleur : maintenant ⏰",
+    "Immobilier digital + Trading IA = la stratégie des investisseurs modernes 🧩",
+    "Chaque jour sans revenus passifs = dépendre uniquement de ton salaire. Changeons ça 💪",
+]
+
+def create_story_image(title: str, subtitle: str, tag: str = "", bg_color: tuple = (10, 20, 50), accent_color: tuple = (255, 200, 0)) -> str:
+    from PIL import Image, ImageDraw, ImageFont
+    import textwrap
+    img = Image.new("RGB", (1080, 1920), color=bg_color)
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([(0, 0), (1080, 10)], fill=accent_color)
+    draw.rectangle([(0, 1910), (1080, 1920)], fill=accent_color)
+    try:
+        font_brand = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
+        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 68)
+        font_sub   = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 46)
+    except Exception:
+        font_brand = font_title = font_sub = ImageFont.load_default()
+    draw.text((60, 80),  "Project Inves'T",           font=font_brand, fill=accent_color)
+    draw.text((60, 140), "@projectinvest_officiel",   font=font_brand, fill=(150, 150, 150))
+    if tag:
+        w = len(tag) * 26 + 40
+        draw.rectangle([(60, 220), (60 + w, 290)], fill=accent_color)
+        draw.text((80, 228), tag, font=font_sub, fill=(0, 0, 0))
+    y = 680
+    for line in textwrap.wrap(title, width=18):
+        draw.text((60, y), line, font=font_title, fill=(255, 255, 255))
+        y += 95
+    y += 30
+    for line in textwrap.wrap(subtitle, width=26):
+        draw.text((60, y), line, font=font_sub, fill=(200, 200, 200))
+        y += 65
+    path = "/tmp/story.jpg"
+    img.save(path, format="JPEG", quality=95)
+    return path
+
+async def instagram_story_quiz():
+    try:
+        quiz = random.choice(STORY_QUIZ_LIST)
+        cl = InstaClient()
+        cl.login(INSTA_USERNAME, INSTA_PASSWORD)
+        img_path = create_story_image(
+            title=quiz["question"], subtitle="Vote ci-dessous ! 👇",
+            bg_color=(10, 20, 80), accent_color=(100, 200, 255)
+        )
+        try:
+            from instagrapi.types import StoryPoll
+            poll = StoryPoll(
+                x=0.5, y=0.75, width=0.9, height=0.14, rotation=0,
+                question=quiz["question"],
+                tallies=[
+                    {"text": quiz["oui"], "count": 0, "font_size": 35.0},
+                    {"text": quiz["non"], "count": 0, "font_size": 35.0}
+                ]
+            )
+            cl.photo_upload_to_story(img_path, stickers=[poll])
+        except Exception:
+            cl.photo_upload_to_story(img_path)
+        logger.info(f"Instagram story quiz: {quiz['question']}")
+        await notify_john(f"✅ *Instagram Story* — Quiz :\n\n❓ {quiz['question']}")
+    except Exception as e:
+        logger.error(f"Erreur Instagram story quiz: {e}")
+        await notify_john(f"❌ *Instagram Story* quiz erreur: {str(e)[:200]}")
+
+async def instagram_story_projet():
+    try:
+        projet = random.choice(STORY_PROJECTS_LIST)
+        cl = InstaClient()
+        cl.login(INSTA_USERNAME, INSTA_PASSWORD)
+        img_path = create_story_image(
+            title=projet["nom"], subtitle=projet["desc"],
+            tag="PROJET", bg_color=projet["bg"], accent_color=(255, 200, 0)
+        )
+        try:
+            from instagrapi.types import StoryLink
+            cl.photo_upload_to_story(img_path, stickers=[StoryLink(webUri=projet["lien"])])
+        except Exception:
+            cl.photo_upload_to_story(img_path)
+        logger.info(f"Instagram story projet: {projet['nom']}")
+        await notify_john(f"✅ *Instagram Story* — Projet :\n\n🏦 {projet['nom']}\n🔗 {projet['lien']}")
+    except Exception as e:
+        logger.error(f"Erreur Instagram story projet: {e}")
+        await notify_john(f"❌ *Instagram Story* projet erreur: {str(e)[:200]}")
+
+async def instagram_story_inspiration():
+    try:
+        text = random.choice(STORY_INSPIRATIONS)
+        cl = InstaClient()
+        cl.login(INSTA_USERNAME, INSTA_PASSWORD)
+        img_path = create_story_image(
+            title=text, subtitle="Project Inves'T — Investis intelligemment",
+            bg_color=(10, 10, 30), accent_color=(255, 160, 0)
+        )
+        cl.photo_upload_to_story(img_path)
+        logger.info("Instagram story inspiration publiée")
+        await notify_john(f"✅ *Instagram Story* — Inspiration :\n\n💡 {text[:150]}")
+    except Exception as e:
+        logger.error(f"Erreur Instagram story inspiration: {e}")
+        await notify_john(f"❌ *Instagram Story* inspiration erreur: {str(e)[:200]}")
+
+async def instagram_post_story():
+    story_type = random.choices(["quiz", "projet", "inspiration"], weights=[30, 40, 30])[0]
+    if story_type == "quiz":
+        await instagram_story_quiz()
+    elif story_type == "projet":
+        await instagram_story_projet()
+    else:
+        await instagram_story_inspiration()
+
 # ─── TWITTER/X ────────────────────────────────────────────────────────────────
 async def twitter_post():
     try:
@@ -428,6 +559,11 @@ async def main():
 
     # Réponses IA aux messages LinkedIn toutes les 2h
     scheduler.add_job(linkedin_handle_messages, 'interval', hours=2)
+
+    # Stories Instagram 3x/jour
+    scheduler.add_job(instagram_post_story, 'cron', hour=9,  minute=0)
+    scheduler.add_job(instagram_post_story, 'cron', hour=13, minute=30)
+    scheduler.add_job(instagram_post_story, 'cron', hour=19, minute=0)
 
     scheduler.start()
     logger.info("✅ Bot Réseaux Sociaux Project Inves'T démarré !")
