@@ -111,6 +111,60 @@ def get_linkedin_api():
     except Exception:
         return Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
 
+LINKEDIN_CONNECTIONS_FILE = "/tmp/linkedin_connections.json"
+
+def load_known_connections():
+    import json
+    try:
+        if os.path.exists(LINKEDIN_CONNECTIONS_FILE):
+            with open(LINKEDIN_CONNECTIONS_FILE, 'r') as f:
+                return set(json.load(f))
+    except Exception:
+        pass
+    return set()
+
+def save_known_connections(conn_set):
+    import json
+    try:
+        with open(LINKEDIN_CONNECTIONS_FILE, 'w') as f:
+            json.dump(list(conn_set), f)
+    except Exception as e:
+        logger.error(f"Erreur sauvegarde connexions: {e}")
+
+async def linkedin_check_new_connections():
+    try:
+        api = await asyncio.to_thread(get_linkedin_api)
+        connections = await asyncio.to_thread(api.get_connections, limit=50)
+        known = load_known_connections()
+        new_connections = []
+        current_ids = set()
+        for c in connections:
+            uid = c.get("public_id", "") or str(c.get("entityUrn", ""))
+            if not uid:
+                continue
+            current_ids.add(uid)
+            if uid not in known:
+                new_connections.append(c)
+        if not known:
+            save_known_connections(current_ids)
+            logger.info(f"LinkedIn: {len(current_ids)} connexions initiales sauvegardées")
+            return
+        for c in new_connections:
+            try:
+                prenom = c.get("firstName", "vous")
+                uid = c.get("public_id", "") or str(c.get("entityUrn", ""))
+                message = MESSAGE_PROSPECT.format(prenom=prenom)
+                recipients = [{"entityUrn": c.get("entityUrn", f"urn:li:member:{uid}")}]
+                await asyncio.to_thread(api.send_message, message, recipients)
+                logger.info(f"LinkedIn message envoyé à {prenom} (nouvelle connexion)")
+                await notify_john(f"🤝 *LinkedIn* — Nouvelle connexion acceptée !\n👤 {prenom}\n💬 Message de prospection envoyé automatiquement")
+                await asyncio.sleep(random.uniform(30, 60))
+            except Exception as e:
+                logger.error(f"Erreur message nouvelle connexion LinkedIn: {e}")
+        save_known_connections(current_ids)
+    except Exception as e:
+        logger.error(f"Erreur vérification connexions LinkedIn: {e}")
+
 async def linkedin_post():
     try:
         content = await generate_post("LinkedIn")
@@ -261,6 +315,9 @@ async def main():
     scheduler.add_job(linkedin_prospect,  'interval', days=3, start_date='2026-04-25 09:30:00')
     scheduler.add_job(instagram_prospect, 'interval', days=3, start_date='2026-04-25 14:00:00')
     scheduler.add_job(twitter_prospect,   'interval', days=3, start_date='2026-04-25 16:00:00')
+
+    # Vérification nouvelles connexions LinkedIn toutes les 6h
+    scheduler.add_job(linkedin_check_new_connections, 'interval', hours=6)
 
     scheduler.start()
     logger.info("✅ Bot Réseaux Sociaux Project Inves'T démarré !")
