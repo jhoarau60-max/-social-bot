@@ -54,6 +54,27 @@ CONTENT_TOPICS = [
 
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
+LINKEDIN_AI_PROMPT = """Tu es un expert en investissement qui travaille avec John (H.Johnny), Top Leader francophone de la communauté Project Inves'T.
+
+Tu discutes sur LinkedIn avec des prospects intéressés par l'investissement. Ton but est de les amener naturellement à rejoindre les projets de John.
+
+LES 4 PROJETS (donne les liens quand la personne est prête à s'inscrire):
+- E-Estate: immobilier tokenisé, dès 10$, 0.41%-1%/jour. Lien: https://www.e-estate.co/agent/953277721577
+- SMARTS MEV Bot: trading automatique IA, bot à 49$. Lien: https://xmev.ai?inviteCode=QVKB8JNC
+- ArbCore: arbitrage crypto, 1.07%/jour, min 50 USDT. Lien: https://arbcore.app/?frenID=IFK2MAN6
+- Artena: club DeFi privé, Pass dès 50$. Lien: https://artena.pro/r/jonas05
+
+RÈGLES:
+1. Réponds dans la langue du message (français/anglais/espagnol...).
+2. Sois naturel, humain, professionnel — pas robotique.
+3. Pose des questions pour comprendre les besoins de la personne.
+4. Ne donne pas tous les projets d'un coup — commence par celui qui correspond le mieux à ce qu'elle cherche.
+5. Si elle est intéressée, propose un webinaire ou donne le lien d'inscription directement.
+6. Réponses courtes : 2-4 phrases max.
+7. Tu ne dis JAMAIS que tu es une IA."""
+
+linkedin_conversations = {}  # {conversation_id: last_message_id}
+
 # ─── NOTIFICATION TELEGRAM ───────────────────────────────────────────────────
 async def notify_john(message: str):
     try:
@@ -112,6 +133,92 @@ def get_linkedin_api():
         return Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
 
 LINKEDIN_CONNECTIONS_FILE = "/tmp/linkedin_connections.json"
+LINKEDIN_REPLIED_FILE = "/tmp/linkedin_replied.json"
+
+def load_replied_messages():
+    import json
+    try:
+        if os.path.exists(LINKEDIN_REPLIED_FILE):
+            with open(LINKEDIN_REPLIED_FILE, 'r') as f:
+                return set(json.load(f))
+    except Exception:
+        pass
+    return set()
+
+def save_replied_messages(replied_set):
+    import json
+    try:
+        with open(LINKEDIN_REPLIED_FILE, 'w') as f:
+            json.dump(list(replied_set), f)
+    except Exception as e:
+        logger.error(f"Erreur sauvegarde replied: {e}")
+
+async def generate_linkedin_reply(conversation_history: list, last_message: str) -> str:
+    history_text = "\n".join([f"{m['author']}: {m['text']}" for m in conversation_history[-6:]])
+    prompt = f"Historique de la conversation:\n{history_text}\n\nDernier message reçu: {last_message}\n\nRéponds naturellement."
+    response = await asyncio.to_thread(
+        lambda: gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config={"system_instruction": LINKEDIN_AI_PROMPT}
+        )
+    )
+    return response.text.strip()
+
+async def linkedin_handle_messages():
+    try:
+        api = await asyncio.to_thread(get_linkedin_api)
+        conversations = await asyncio.to_thread(api.get_conversations)
+        replied = load_replied_messages()
+        my_email = LINKEDIN_EMAIL.split("@")[0].lower()
+
+        for conv in conversations.get("elements", []):
+            try:
+                conv_id = conv.get("entityUrn", "")
+                events = conv.get("events", [])
+                if not events:
+                    continue
+
+                last_event = events[0]
+                msg_id = last_event.get("entityUrn", "")
+                if msg_id in replied:
+                    continue
+
+                # Vérifier que le dernier message n'est pas de nous
+                sender = last_event.get("from", {}).get("com.linkedin.voyager.messaging.MessagingMember", {})
+                sender_name = sender.get("miniProfile", {}).get("firstName", "")
+                if my_email in sender_name.lower():
+                    continue
+
+                last_text = last_event.get("eventContent", {}).get("com.linkedin.voyager.messaging.event.MessageEvent", {}).get("attributedBody", {}).get("text", "")
+                if not last_text:
+                    continue
+
+                # Construire l'historique
+                history = []
+                for event in reversed(events[:10]):
+                    s = event.get("from", {}).get("com.linkedin.voyager.messaging.MessagingMember", {})
+                    s_name = s.get("miniProfile", {}).get("firstName", "Inconnu")
+                    text = event.get("eventContent", {}).get("com.linkedin.voyager.messaging.event.MessageEvent", {}).get("attributedBody", {}).get("text", "")
+                    if text:
+                        history.append({"author": s_name, "text": text})
+
+                reply = await generate_linkedin_reply(history, last_text)
+                participants = conv.get("participants", [])
+                recipients = [{"entityUrn": p} for p in participants if my_email not in str(p)]
+                await asyncio.to_thread(api.send_message, reply, recipients)
+
+                replied.add(msg_id)
+                save_replied_messages(replied)
+                logger.info(f"LinkedIn réponse IA envoyée: {reply[:80]}...")
+                await notify_john(f"🤖 *LinkedIn — Réponse IA envoyée*\n\n💬 Reçu: {last_text[:200]}\n\n🤖 Répondu: {reply[:200]}")
+                await asyncio.sleep(random.uniform(20, 45))
+
+            except Exception as e:
+                logger.error(f"Erreur traitement conversation LinkedIn: {e}")
+
+    except Exception as e:
+        logger.error(f"Erreur linkedin_handle_messages: {e}")
 
 def load_known_connections():
     import json
@@ -318,6 +425,9 @@ async def main():
 
     # Vérification nouvelles connexions LinkedIn toutes les 6h
     scheduler.add_job(linkedin_check_new_connections, 'interval', hours=6)
+
+    # Réponses IA aux messages LinkedIn toutes les 2h
+    scheduler.add_job(linkedin_handle_messages, 'interval', hours=2)
 
     scheduler.start()
     logger.info("✅ Bot Réseaux Sociaux Project Inves'T démarré !")
