@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import httpx
-from google import genai
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from instagrapi import Client as InstaClient
 from linkedin_api import Linkedin
@@ -51,7 +51,13 @@ CONTENT_TOPICS = [
     "ArbCore, E-Estate, Smart Bot : 3 façons concrètes de créer des revenus passifs avec la technologie blockchain.",
 ]
 
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+async def call_gemini(prompt: str, system_instruction: str = None) -> str:
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    if system_instruction:
+        payload["system_instruction"] = {"parts": [{"text": system_instruction}]}
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(f"{GEMINI_URL}?key={GEMINI_API_KEY}", json=payload)
+        return r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 LINKEDIN_AI_PROMPT = """Tu es un expert en investissement qui travaille avec John (H.Johnny), Top Leader francophone de la communauté Project Inves'T.
 
@@ -111,10 +117,7 @@ async def generate_post(platform: str) -> str:
             "Hashtags : #Investissement #LiberteFinanciere\n"
             "Ton : direct, percutant, inspirant."
         )
-    response = await asyncio.to_thread(
-        lambda: gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-    )
-    return response.text.strip()
+    return await call_gemini(prompt)
 
 # ─── LINKEDIN ─────────────────────────────────────────────────────────────────
 def get_linkedin_api():
@@ -152,13 +155,7 @@ def save_replied_messages(replied_set):
 async def generate_linkedin_reply(conversation_history: list, last_message: str) -> str:
     history_text = "\n".join([f"{m['author']}: {m['text']}" for m in conversation_history[-6:]])
     prompt = f"Historique de la conversation:\n{history_text}\n\nDernier message reçu: {last_message}\n\nRéponds naturellement."
-    response = await asyncio.to_thread(
-        lambda: gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt,
-            config={"system_instruction": LINKEDIN_AI_PROMPT}
-        )
-    )
-    return response.text.strip()
+    return await call_gemini(prompt, system_instruction=LINKEDIN_AI_PROMPT)
 
 async def linkedin_handle_messages():
     try:
