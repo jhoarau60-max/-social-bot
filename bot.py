@@ -34,7 +34,8 @@ MESSAGE_PROSPECT = (
     "le même intérêt pour l'investissement. Je travaille sur des projets qui "
     "génèrent des revenus passifs via l'immobilier digital et le trading IA — "
     "des choses concrètes qui fonctionnent en 2026. "
-    "Ça vous dirait qu'on échange 5 minutes ?"
+    "Sofia notre assistante peut tout vous expliquer en détail sur Telegram 👇\n"
+    "https://t.me/+uCoVH7WThTc1ZmQ0"
 )
 
 KEYWORDS_LINKEDIN  = ["investissement passif", "liberté financière", "crypto investissement", "immobilier", "revenus passifs"]
