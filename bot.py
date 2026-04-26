@@ -5,6 +5,11 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import httpx
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from instagrapi import Client as InstaClient

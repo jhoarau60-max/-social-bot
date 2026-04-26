@@ -4,3 +4,4 @@ twikit
 apscheduler==3.11.2
 httpx==0.28.1
 Pillow
+python-dotenv
