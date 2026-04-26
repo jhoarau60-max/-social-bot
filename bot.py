@@ -126,11 +126,16 @@ async def notify_john(message: str):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         async with httpx.AsyncClient() as client:
-            await client.post(url, json={
+            resp = await client.post(url, json={
                 "chat_id": JOHN_ID,
                 "text": message,
                 "parse_mode": "Markdown"
             })
+            if resp.status_code == 400:
+                await client.post(url, json={
+                    "chat_id": JOHN_ID,
+                    "text": message
+                })
     except Exception as e:
         logger.error(f"Erreur notification Telegram: {e}")
 
