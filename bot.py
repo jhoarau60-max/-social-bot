@@ -79,7 +79,47 @@ RÈGLES:
 6. Réponses courtes : 2-4 phrases max.
 7. Tu ne dis JAMAIS que tu es une IA."""
 
-linkedin_conversations = {}  # {conversation_id: last_message_id}
+linkedin_conversations = {}
+
+# ─── CLIENTS GLOBAUX (login une seule fois) ───────────────────────────────────
+INSTA_SESSION_FILE   = "/tmp/insta_session.json"
+TWITTER_COOKIES_FILE = "/tmp/twitter_cookies.json"
+insta_client: InstaClient = None
+twitter_client: twikit.Client = None
+
+async def init_instagram():
+    global insta_client
+    cl = InstaClient()
+    proxy = os.environ.get("INSTAGRAM_PROXY")
+    if proxy:
+        cl.set_proxy(proxy)
+    try:
+        if os.path.exists(INSTA_SESSION_FILE):
+            cl.load_settings(INSTA_SESSION_FILE)
+        cl.login(INSTA_USERNAME, INSTA_PASSWORD)
+        cl.dump_settings(INSTA_SESSION_FILE)
+        insta_client = cl
+        logger.info("✅ Instagram connecté (session sauvegardée)")
+    except Exception as e:
+        logger.error(f"❌ Instagram login: {e}")
+        await notify_john(f"❌ *Instagram* login échoué: {str(e)[:200]}")
+
+async def init_twitter():
+    global twitter_client
+    cl = twikit.Client("fr-FR")
+    try:
+        if os.path.exists(TWITTER_COOKIES_FILE):
+            cl.load_cookies(TWITTER_COOKIES_FILE)
+            twitter_client = cl
+            logger.info("✅ Twitter connecté (cookies)")
+        else:
+            await cl.login(auth_info_1=TWITTER_USERNAME, auth_info_2=TWITTER_EMAIL, password=TWITTER_PASSWORD)
+            cl.save_cookies(TWITTER_COOKIES_FILE)
+            twitter_client = cl
+            logger.info("✅ Twitter connecté (login)")
+    except Exception as e:
+        logger.error(f"❌ Twitter login: {e}")
+        await notify_john(f"❌ *Twitter/X* login échoué: {str(e)[:200]}")
 
 # ─── NOTIFICATION TELEGRAM ───────────────────────────────────────────────────
 async def notify_john(message: str):
@@ -303,16 +343,14 @@ async def linkedin_prospect():
 
 # ─── INSTAGRAM ────────────────────────────────────────────────────────────────
 async def instagram_post():
+    if not insta_client:
+        await notify_john("⚠️ *Instagram* — Client non connecté, post ignoré")
+        return
     try:
         content = await generate_post("Instagram")
-        cl = InstaClient()
-        cl.login(INSTA_USERNAME, INSTA_PASSWORD)
-        # Crée une image simple avec Pillow
         from PIL import Image, ImageDraw, ImageFont
-        import io
         img = Image.new("RGB", (1080, 1080), color=(10, 20, 50))
         draw = ImageDraw.Draw(img)
-        # Texte centré
         lines = content.split("\n")
         y = 300
         for line in lines[:8]:
@@ -320,7 +358,7 @@ async def instagram_post():
             y += 80
         img_path = "/tmp/insta_post.jpg"
         img.save(img_path, format="JPEG", quality=95)
-        cl.photo_upload(img_path, content)
+        insta_client.photo_upload(img_path, content)
         logger.info("Instagram post publié")
         await notify_john(f"✅ *Instagram* — Post publié :\n\n{content[:300]}")
     except Exception as e:
@@ -328,11 +366,12 @@ async def instagram_post():
         await notify_john(f"❌ *Instagram* post erreur: {str(e)[:200]}")
 
 async def instagram_prospect():
+    if not insta_client:
+        await notify_john("⚠️ *Instagram* — Client non connecté, prospecting ignoré")
+        return
     try:
-        cl = InstaClient()
-        cl.login(INSTA_USERNAME, INSTA_PASSWORD)
         hashtag = random.choice(KEYWORDS_INSTAGRAM)
-        medias = cl.hashtag_medias_top(hashtag, amount=30)
+        medias = insta_client.hashtag_medias_top(hashtag, amount=30)
         count = 0
         done_users = set()
         for media in medias:
@@ -343,10 +382,10 @@ async def instagram_prospect():
                 if user_id in done_users:
                     continue
                 done_users.add(user_id)
-                user_info = cl.user_info(user_id)
+                user_info = insta_client.user_info(user_id)
                 prenom = user_info.full_name.split()[0] if user_info.full_name else "vous"
                 message = MESSAGE_PROSPECT.format(prenom=prenom)
-                cl.direct_send(message, [user_id])
+                insta_client.direct_send(message, [user_id])
                 count += 1
                 logger.info(f"Instagram DM envoyé à {prenom}")
                 await asyncio.sleep(random.uniform(90, 180))
@@ -416,10 +455,11 @@ def create_story_image(title: str, subtitle: str, tag: str = "", bg_color: tuple
     return path
 
 async def instagram_story_quiz():
+    if not insta_client:
+        await notify_john("⚠️ *Instagram* — Client non connecté, story ignorée")
+        return
     try:
         quiz = random.choice(STORY_QUIZ_LIST)
-        cl = InstaClient()
-        cl.login(INSTA_USERNAME, INSTA_PASSWORD)
         img_path = create_story_image(
             title=quiz["question"], subtitle="Vote ci-dessous ! 👇",
             bg_color=(10, 20, 80), accent_color=(100, 200, 255)
@@ -434,9 +474,9 @@ async def instagram_story_quiz():
                     {"text": quiz["non"], "count": 0, "font_size": 35.0}
                 ]
             )
-            cl.photo_upload_to_story(img_path, stickers=[poll])
+            insta_client.photo_upload_to_story(img_path, stickers=[poll])
         except Exception:
-            cl.photo_upload_to_story(img_path)
+            insta_client.photo_upload_to_story(img_path)
         logger.info(f"Instagram story quiz: {quiz['question']}")
         await notify_john(f"✅ *Instagram Story* — Quiz :\n\n❓ {quiz['question']}")
     except Exception as e:
@@ -444,19 +484,20 @@ async def instagram_story_quiz():
         await notify_john(f"❌ *Instagram Story* quiz erreur: {str(e)[:200]}")
 
 async def instagram_story_projet():
+    if not insta_client:
+        await notify_john("⚠️ *Instagram* — Client non connecté, story ignorée")
+        return
     try:
         projet = random.choice(STORY_PROJECTS_LIST)
-        cl = InstaClient()
-        cl.login(INSTA_USERNAME, INSTA_PASSWORD)
         img_path = create_story_image(
             title=projet["nom"], subtitle=projet["desc"],
             tag="PROJET", bg_color=projet["bg"], accent_color=(255, 200, 0)
         )
         try:
             from instagrapi.types import StoryLink
-            cl.photo_upload_to_story(img_path, stickers=[StoryLink(webUri=projet["lien"])])
+            insta_client.photo_upload_to_story(img_path, stickers=[StoryLink(webUri=projet["lien"])])
         except Exception:
-            cl.photo_upload_to_story(img_path)
+            insta_client.photo_upload_to_story(img_path)
         logger.info(f"Instagram story projet: {projet['nom']}")
         await notify_john(f"✅ *Instagram Story* — Projet :\n\n🏦 {projet['nom']}\n🔗 {projet['lien']}")
     except Exception as e:
@@ -464,15 +505,16 @@ async def instagram_story_projet():
         await notify_john(f"❌ *Instagram Story* projet erreur: {str(e)[:200]}")
 
 async def instagram_story_inspiration():
+    if not insta_client:
+        await notify_john("⚠️ *Instagram* — Client non connecté, story ignorée")
+        return
     try:
         text = random.choice(STORY_INSPIRATIONS)
-        cl = InstaClient()
-        cl.login(INSTA_USERNAME, INSTA_PASSWORD)
         img_path = create_story_image(
             title=text, subtitle="Project Inves'T — Investis intelligemment",
             bg_color=(10, 10, 30), accent_color=(255, 160, 0)
         )
-        cl.photo_upload_to_story(img_path)
+        insta_client.photo_upload_to_story(img_path)
         logger.info("Instagram story inspiration publiée")
         await notify_john(f"✅ *Instagram Story* — Inspiration :\n\n💡 {text[:150]}")
     except Exception as e:
@@ -490,15 +532,12 @@ async def instagram_post_story():
 
 # ─── TWITTER/X ────────────────────────────────────────────────────────────────
 async def twitter_post():
+    if not twitter_client:
+        await notify_john("⚠️ *Twitter/X* — Client non connecté, tweet ignoré")
+        return
     try:
         content = await generate_post("Twitter")
-        client = twikit.Client("fr-FR")
-        await client.login(
-            auth_info_1=TWITTER_USERNAME,
-            auth_info_2=TWITTER_EMAIL,
-            password=TWITTER_PASSWORD
-        )
-        await client.create_tweet(text=content[:280])
+        await twitter_client.create_tweet(text=content[:280])
         logger.info("Twitter post publié")
         await notify_john(f"✅ *Twitter/X* — Tweet publié :\n\n{content[:200]}")
     except Exception as e:
@@ -506,15 +545,12 @@ async def twitter_post():
         await notify_john(f"❌ *Twitter/X* post erreur: {str(e)[:200]}")
 
 async def twitter_prospect():
+    if not twitter_client:
+        await notify_john("⚠️ *Twitter/X* — Client non connecté, prospecting ignoré")
+        return
     try:
-        client = twikit.Client("fr-FR")
-        await client.login(
-            auth_info_1=TWITTER_USERNAME,
-            auth_info_2=TWITTER_EMAIL,
-            password=TWITTER_PASSWORD
-        )
         keyword = random.choice(KEYWORDS_TWITTER)
-        users = await client.search_user(keyword, count=PROSPECTS_PER_DAY * 2)
+        users = await twitter_client.search_user(keyword, count=PROSPECTS_PER_DAY * 2)
         count = 0
         for user in users:
             if count >= PROSPECTS_PER_DAY:
@@ -522,7 +558,7 @@ async def twitter_prospect():
             try:
                 prenom = user.name.split()[0] if user.name else "vous"
                 message = MESSAGE_PROSPECT.format(prenom=prenom)
-                await client.send_dm(user.id, message)
+                await twitter_client.send_dm(user.id, message)
                 count += 1
                 logger.info(f"Twitter DM envoyé à {prenom}")
                 await asyncio.sleep(random.uniform(60, 120))
@@ -557,6 +593,9 @@ async def main():
     scheduler.add_job(instagram_post_story, 'cron', hour=9,  minute=0)
     scheduler.add_job(instagram_post_story, 'cron', hour=13, minute=30)
     scheduler.add_job(instagram_post_story, 'cron', hour=19, minute=0)
+
+    await init_instagram()
+    await init_twitter()
 
     scheduler.start()
     logger.info("✅ Bot Réseaux Sociaux Project Inves'T démarré !")
