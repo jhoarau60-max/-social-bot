@@ -161,6 +161,16 @@ async def generate_post(platform: str) -> str:
     return await call_gemini(prompt)
 
 # ─── LINKEDIN ─────────────────────────────────────────────────────────────────
+LINKEDIN_CHALLENGE_MSG = (
+    "⚠️ *LinkedIn — Vérification manuelle requise*\n\n"
+    "LinkedIn a bloqué la connexion automatique (CHALLENGE détecté).\n\n"
+    "*👉 Actions à faire :*\n"
+    "1. Va sur linkedin.com et connecte-toi manuellement\n"
+    "2. Complète la vérification (email / SMS / captcha)\n"
+    "3. Redémarre le bot sur Railway\n\n"
+    "_Le bot reprendra automatiquement après le redémarrage._"
+)
+
 def get_linkedin_api():
     cookies_file = "/tmp/linkedin_cookies.json"
     try:
@@ -169,7 +179,9 @@ def get_linkedin_api():
         else:
             api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
         return api
-    except Exception:
+    except Exception as e:
+        if "CHALLENGE" in str(e).upper():
+            raise Exception("LINKEDIN_CHALLENGE")
         return Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
 
 LINKEDIN_CONNECTIONS_FILE = "/tmp/linkedin_connections.json"
@@ -252,6 +264,8 @@ async def linkedin_handle_messages():
 
     except Exception as e:
         logger.error(f"Erreur linkedin_handle_messages: {e}")
+        if "LINKEDIN_CHALLENGE" in str(e):
+            await notify_john(LINKEDIN_CHALLENGE_MSG)
 
 def load_known_connections():
     import json
@@ -304,6 +318,8 @@ async def linkedin_check_new_connections():
         save_known_connections(current_ids)
     except Exception as e:
         logger.error(f"Erreur vérification connexions LinkedIn: {e}")
+        if "LINKEDIN_CHALLENGE" in str(e):
+            await notify_john(LINKEDIN_CHALLENGE_MSG)
 
 async def linkedin_post():
     try:
@@ -314,7 +330,10 @@ async def linkedin_post():
         await notify_john(f"✅ *LinkedIn* — Post publié :\n\n{content[:300]}")
     except Exception as e:
         logger.error(f"Erreur LinkedIn post: {e}")
-        await notify_john(f"❌ *LinkedIn* post erreur: {str(e)[:200]}")
+        if "LINKEDIN_CHALLENGE" in str(e):
+            await notify_john(LINKEDIN_CHALLENGE_MSG)
+        else:
+            await notify_john(f"❌ *LinkedIn* post erreur: {str(e)[:200]}")
 
 async def linkedin_prospect():
     try:
@@ -339,7 +358,10 @@ async def linkedin_prospect():
         await notify_john(f"✅ *LinkedIn* — {count} invitations envoyées (mot-clé: {keyword})")
     except Exception as e:
         logger.error(f"Erreur LinkedIn prospecting: {e}")
-        await notify_john(f"❌ *LinkedIn* prospecting erreur: {str(e)[:200]}")
+        if "LINKEDIN_CHALLENGE" in str(e):
+            await notify_john(LINKEDIN_CHALLENGE_MSG)
+        else:
+            await notify_john(f"❌ *LinkedIn* prospecting erreur: {str(e)[:200]}")
 
 # ─── INSTAGRAM ────────────────────────────────────────────────────────────────
 async def instagram_post():
