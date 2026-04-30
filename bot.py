@@ -87,8 +87,8 @@ RÈGLES:
 linkedin_conversations = {}
 
 # ─── CLIENTS GLOBAUX (login une seule fois) ───────────────────────────────────
-INSTA_SESSION_FILE   = "/tmp/insta_session.json"
-TWITTER_COOKIES_FILE = "/tmp/twitter_cookies.json"
+INSTA_SESSION_FILE   = "/home/johnny/-social-bot/insta_session.json"
+TWITTER_COOKIES_FILE = "/home/johnny/-social-bot/twitter_cookies.json"
 insta_client: InstaClient = None
 twitter_client: twikit.Client = None
 
