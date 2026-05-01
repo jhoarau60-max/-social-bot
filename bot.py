@@ -634,8 +634,19 @@ async def main():
     scheduler.add_job(instagram_post_story, 'cron', hour=13, minute=30)
     scheduler.add_job(instagram_post_story, 'cron', hour=19, minute=0)
 
-    await init_instagram()
-    await init_twitter()
+    logger.info("🔄 Initialisation Instagram...")
+    try:
+        await asyncio.wait_for(init_instagram(), timeout=30)
+    except asyncio.TimeoutError:
+        logger.error("❌ Instagram timeout (30s) — bot continue sans Instagram")
+        await notify_john("⚠️ *Instagram* — timeout connexion, bot continue sans Instagram")
+
+    logger.info("🔄 Initialisation Twitter...")
+    try:
+        await asyncio.wait_for(init_twitter(), timeout=30)
+    except asyncio.TimeoutError:
+        logger.error("❌ Twitter timeout (30s) — bot continue sans Twitter")
+        await notify_john("⚠️ *Twitter/X* — timeout connexion, bot continue sans Twitter")
 
     scheduler.start()
     logger.info("✅ Bot Réseaux Sociaux Project Inves'T démarré !")
@@ -644,4 +655,5 @@ async def main():
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
+    print("Démarrage du bot...", flush=True)
     asyncio.run(main())
