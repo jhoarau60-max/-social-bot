@@ -99,12 +99,16 @@ async def init_instagram():
     if proxy:
         cl.set_proxy(proxy)
     try:
-        if os.path.exists(INSTA_SESSION_FILE):
-            cl.load_settings(INSTA_SESSION_FILE)
-        cl.login(INSTA_USERNAME, INSTA_PASSWORD)
-        cl.dump_settings(INSTA_SESSION_FILE)
+        session_id = os.environ.get("INSTA_SESSION_ID")
+        if session_id:
+            cl.login_by_sessionid(session_id)
+        else:
+            if os.path.exists(INSTA_SESSION_FILE):
+                cl.load_settings(INSTA_SESSION_FILE)
+            cl.login(INSTA_USERNAME, INSTA_PASSWORD)
+            cl.dump_settings(INSTA_SESSION_FILE)
         insta_client = cl
-        logger.info("✅ Instagram connecté (session sauvegardée)")
+        logger.info("✅ Instagram connecté")
     except Exception as e:
         logger.error(f"❌ Instagram login: {e}")
         await notify_john(f"❌ *Instagram* login échoué: {str(e)[:200]}")
@@ -177,22 +181,22 @@ LINKEDIN_CHALLENGE_MSG = (
     "*👉 Actions à faire :*\n"
     "1. Va sur linkedin.com et connecte-toi manuellement\n"
     "2. Complète la vérification (email / SMS / captcha)\n"
-    "3. Redémarre le bot sur Railway\n\n"
+    "3. Redémarre le bot (pkill -f bot.py puis relance)\n\n"
     "_Le bot reprendra automatiquement après le redémarrage._"
 )
 
 def get_linkedin_api():
-    cookies_file = "/tmp/linkedin_cookies.json"
+    li_at = os.environ.get("LINKEDIN_COOKIE")
     try:
-        if os.path.exists(cookies_file):
-            api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD, cookies=cookies_file)
+        if li_at:
+            api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD, authenticate=False, cookies={"li_at": li_at})
         else:
             api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
         return api
     except Exception as e:
         if "CHALLENGE" in str(e).upper():
             raise Exception("LINKEDIN_CHALLENGE")
-        return Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
+        raise
 
 LINKEDIN_CONNECTIONS_FILE = "/tmp/linkedin_connections.json"
 LINKEDIN_REPLIED_FILE = "/tmp/linkedin_replied.json"
