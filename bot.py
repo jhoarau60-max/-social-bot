@@ -187,9 +187,13 @@ LINKEDIN_CHALLENGE_MSG = (
 
 def get_linkedin_api():
     li_at = os.environ.get("LINKEDIN_COOKIE")
+    jsessionid = os.environ.get("LINKEDIN_JSESSIONID", "")
     try:
         if li_at:
-            api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD, authenticate=False, cookies={"li_at": li_at})
+            cookies = {"li_at": li_at}
+            if jsessionid:
+                cookies["JSESSIONID"] = jsessionid
+            api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD, authenticate=False, cookies=cookies)
         else:
             api = Linkedin(LINKEDIN_EMAIL, LINKEDIN_PASSWORD)
         return api
