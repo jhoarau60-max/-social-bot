@@ -117,6 +117,12 @@ async def init_twitter():
     global twitter_client
     cl = twikit.Client("fr-FR")
     try:
+        import json as _json
+        auth_token = os.environ.get("TWITTER_AUTH_TOKEN")
+        ct0 = os.environ.get("TWITTER_CT0")
+        if auth_token and ct0:
+            with open(TWITTER_COOKIES_FILE, 'w') as f:
+                _json.dump({"auth_token": auth_token, "ct0": ct0}, f)
         if os.path.exists(TWITTER_COOKIES_FILE):
             cl.load_cookies(TWITTER_COOKIES_FILE)
             twitter_client = cl
