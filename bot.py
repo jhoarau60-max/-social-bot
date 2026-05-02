@@ -355,13 +355,37 @@ async def instagram_post_story():
         await instagram_story_inspiration()
 
 # ─── TWITTER/X ────────────────────────────────────────────────────────────────
+def create_twitter_image(text: str) -> str:
+    from PIL import Image, ImageDraw, ImageFont
+    import textwrap
+    img = Image.new("RGB", (1200, 675), color=(10, 20, 50))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([(0, 0), (1200, 8)], fill=(255, 200, 0))
+    draw.rectangle([(0, 667), (1200, 675)], fill=(255, 200, 0))
+    try:
+        font_brand = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+        font_text  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 38)
+    except Exception:
+        font_brand = font_text = ImageFont.load_default()
+    draw.text((40, 30), "Project Inves'T", font=font_brand, fill=(255, 200, 0))
+    draw.text((40, 70), "@projectinvest_officiel", font=font_brand, fill=(150, 150, 150))
+    y = 160
+    for line in textwrap.wrap(text.split("#")[0].strip(), width=32):
+        draw.text((40, y), line, font=font_text, fill=(255, 255, 255))
+        y += 55
+    path = "/tmp/twitter_post.jpg"
+    img.save(path, format="JPEG", quality=95)
+    return path
+
 async def twitter_post():
     if not twitter_client:
         await notify_john("⚠️ *Twitter/X* — Client non connecté, tweet ignoré")
         return
     try:
         content = await generate_post("Twitter")
-        await twitter_client.create_tweet(text=content[:280])
+        img_path = create_twitter_image(content)
+        media = await twitter_client.upload_media(img_path)
+        await twitter_client.create_tweet(text=content[:280], media_ids=[media.media_id])
         logger.info("Twitter post publié")
         await notify_john(f"✅ *Twitter/X* — Tweet publié :\n\n{content[:200]}")
     except Exception as e:
