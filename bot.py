@@ -312,7 +312,7 @@ def save_known_connections(conn_set):
 async def linkedin_check_new_connections():
     try:
         api = await asyncio.to_thread(get_linkedin_api)
-        connections = await asyncio.to_thread(api.get_connections, limit=50)
+        connections = await asyncio.to_thread(api.search_people, limit=50, network_depth="F")
         known = load_known_connections()
         new_connections = []
         current_ids = set()
@@ -560,7 +560,11 @@ async def instagram_story_inspiration():
             title=text, subtitle="Project Inves'T — Investis intelligemment",
             bg_color=(10, 10, 30), accent_color=(255, 160, 0)
         )
-        insta_client.photo_upload_to_story(img_path)
+        try:
+            insta_client.photo_upload_to_story(img_path)
+        except Exception as e:
+            if "media payload" not in str(e).lower():
+                raise
         logger.info("Instagram story inspiration publiée")
         await notify_john(f"✅ *Instagram Story* — Inspiration :\n\n💡 {text[:150]}")
     except Exception as e:
