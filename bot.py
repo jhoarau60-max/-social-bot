@@ -32,20 +32,7 @@ TWITTER_PASSWORD   = os.environ.get("TWITTER_PASSWORD")
 
 JOHN_ID        = 7385702412
 PARIS_TZ       = ZoneInfo("Europe/Paris")
-PROSPECTS_PER_DAY = 5
 
-MESSAGE_PROSPECT = (
-    "Bonjour {prenom} 👋 Je tombe sur votre profil et je vois qu'on partage "
-    "le même intérêt pour l'investissement. Je travaille sur des projets qui "
-    "génèrent des revenus passifs via l'immobilier digital et le trading IA — "
-    "des choses concrètes qui fonctionnent en 2026. "
-    "Sofia notre assistante peut tout vous expliquer en détail sur Telegram 👇\n"
-    "https://t.me/+uCoVH7WThTc1ZmQ0"
-)
-
-KEYWORDS_LINKEDIN  = ["investissement passif", "liberté financière", "crypto investissement", "immobilier", "revenus passifs"]
-KEYWORDS_INSTAGRAM = ["investissement", "cryptofrancais", "immobilier", "libertefinanciere", "revenuspassifs"]
-KEYWORDS_TWITTER   = ["investissement crypto", "liberté financière", "immobilier digital", "revenus passifs"]
 
 CONTENT_TOPICS = [
     "L'immobilier tokenisé permet d'investir dans des propriétés mondiales dès 10$ — une révolution accessible à tous.",
@@ -65,26 +52,6 @@ async def call_gemini(prompt: str, system_instruction: str = None) -> str:
         r = await client.post(f"{GEMINI_URL}?key={GEMINI_API_KEY}", json=payload)
         return r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-LINKEDIN_AI_PROMPT = """Tu es un expert en investissement qui travaille avec John (H.Johnny), Top Leader francophone de la communauté Project Inves'T.
-
-Tu discutes sur LinkedIn avec des prospects intéressés par l'investissement. Ton but est de les amener naturellement à rejoindre les projets de John.
-
-LES 4 PROJETS (donne les liens quand la personne est prête à s'inscrire):
-- E-Estate: immobilier tokenisé, dès 10$, 0.41%-1%/jour. Lien: https://www.e-estate.co/agent/953277721577
-- SMARTS MEV Bot: trading automatique IA, bot à 49$. Lien: https://xmev.ai?inviteCode=QVKB8JNC
-- ArbCore: arbitrage crypto, 1.07%/jour, min 50 USDT. Lien: https://arbcore.app/?frenID=IFK2MAN6
-- Artena: club DeFi privé, Pass dès 50$. Lien: https://artena.pro/r/jonas05
-
-RÈGLES:
-1. Réponds dans la langue du message (français/anglais/espagnol...).
-2. Sois naturel, humain, professionnel — pas robotique.
-3. Pose des questions pour comprendre les besoins de la personne.
-4. Ne donne pas tous les projets d'un coup — commence par celui qui correspond le mieux à ce qu'elle cherche.
-5. Si elle est intéressée, propose un webinaire ou donne le lien d'inscription directement.
-6. Réponses courtes : 2-4 phrases max.
-7. Tu ne dis JAMAIS que tu es une IA."""
-
-linkedin_conversations = {}
 
 # ─── CLIENTS GLOBAUX (login une seule fois) ───────────────────────────────────
 INSTA_SESSION_FILE   = "/home/johnny/-social-bot/insta_session.json"
@@ -208,142 +175,6 @@ def get_linkedin_api():
             raise Exception("LINKEDIN_CHALLENGE")
         raise
 
-LINKEDIN_CONNECTIONS_FILE = "/tmp/linkedin_connections.json"
-LINKEDIN_REPLIED_FILE = "/tmp/linkedin_replied.json"
-
-def load_replied_messages():
-    import json
-    try:
-        if os.path.exists(LINKEDIN_REPLIED_FILE):
-            with open(LINKEDIN_REPLIED_FILE, 'r') as f:
-                return set(json.load(f))
-    except Exception:
-        pass
-    return set()
-
-def save_replied_messages(replied_set):
-    import json
-    try:
-        with open(LINKEDIN_REPLIED_FILE, 'w') as f:
-            json.dump(list(replied_set), f)
-    except Exception as e:
-        logger.error(f"Erreur sauvegarde replied: {e}")
-
-async def generate_linkedin_reply(conversation_history: list, last_message: str) -> str:
-    history_text = "\n".join([f"{m['author']}: {m['text']}" for m in conversation_history[-6:]])
-    prompt = f"Historique de la conversation:\n{history_text}\n\nDernier message reçu: {last_message}\n\nRéponds naturellement."
-    return await call_gemini(prompt, system_instruction=LINKEDIN_AI_PROMPT)
-
-async def linkedin_handle_messages():
-    try:
-        api = await asyncio.to_thread(get_linkedin_api)
-        conversations = await asyncio.to_thread(api.get_conversations)
-        replied = load_replied_messages()
-        my_email = LINKEDIN_EMAIL.split("@")[0].lower()
-
-        for conv in conversations.get("elements", []):
-            try:
-                conv_id = conv.get("entityUrn", "")
-                events = conv.get("events", [])
-                if not events:
-                    continue
-
-                last_event = events[0]
-                msg_id = last_event.get("entityUrn", "")
-                if msg_id in replied:
-                    continue
-
-                # Vérifier que le dernier message n'est pas de nous
-                sender = last_event.get("from", {}).get("com.linkedin.voyager.messaging.MessagingMember", {})
-                sender_name = sender.get("miniProfile", {}).get("firstName", "")
-                if my_email in sender_name.lower():
-                    continue
-
-                last_text = last_event.get("eventContent", {}).get("com.linkedin.voyager.messaging.event.MessageEvent", {}).get("attributedBody", {}).get("text", "")
-                if not last_text:
-                    continue
-
-                # Construire l'historique
-                history = []
-                for event in reversed(events[:10]):
-                    s = event.get("from", {}).get("com.linkedin.voyager.messaging.MessagingMember", {})
-                    s_name = s.get("miniProfile", {}).get("firstName", "Inconnu")
-                    text = event.get("eventContent", {}).get("com.linkedin.voyager.messaging.event.MessageEvent", {}).get("attributedBody", {}).get("text", "")
-                    if text:
-                        history.append({"author": s_name, "text": text})
-
-                reply = await generate_linkedin_reply(history, last_text)
-                participants = conv.get("participants", [])
-                recipients = [{"entityUrn": p} for p in participants if my_email not in str(p)]
-                await asyncio.to_thread(api.send_message, reply, recipients)
-
-                replied.add(msg_id)
-                save_replied_messages(replied)
-                logger.info(f"LinkedIn réponse IA envoyée: {reply[:80]}...")
-                await notify_john(f"🤖 *LinkedIn — Réponse IA envoyée*\n\n💬 Reçu: {last_text[:200]}\n\n🤖 Répondu: {reply[:200]}")
-                await asyncio.sleep(random.uniform(20, 45))
-
-            except Exception as e:
-                logger.error(f"Erreur traitement conversation LinkedIn: {e}")
-
-    except Exception as e:
-        logger.error(f"Erreur linkedin_handle_messages: {e}")
-        if "LINKEDIN_CHALLENGE" in str(e):
-            await notify_john(LINKEDIN_CHALLENGE_MSG)
-
-def load_known_connections():
-    import json
-    try:
-        if os.path.exists(LINKEDIN_CONNECTIONS_FILE):
-            with open(LINKEDIN_CONNECTIONS_FILE, 'r') as f:
-                return set(json.load(f))
-    except Exception:
-        pass
-    return set()
-
-def save_known_connections(conn_set):
-    import json
-    try:
-        with open(LINKEDIN_CONNECTIONS_FILE, 'w') as f:
-            json.dump(list(conn_set), f)
-    except Exception as e:
-        logger.error(f"Erreur sauvegarde connexions: {e}")
-
-async def linkedin_check_new_connections():
-    try:
-        api = await asyncio.to_thread(get_linkedin_api)
-        connections = await asyncio.to_thread(api.search_people, limit=50, network_depth="F")
-        known = load_known_connections()
-        new_connections = []
-        current_ids = set()
-        for c in connections:
-            uid = c.get("public_id", "") or str(c.get("entityUrn", ""))
-            if not uid:
-                continue
-            current_ids.add(uid)
-            if uid not in known:
-                new_connections.append(c)
-        if not known:
-            save_known_connections(current_ids)
-            logger.info(f"LinkedIn: {len(current_ids)} connexions initiales sauvegardées")
-            return
-        for c in new_connections:
-            try:
-                prenom = c.get("firstName", "vous")
-                uid = c.get("public_id", "") or str(c.get("entityUrn", ""))
-                message = MESSAGE_PROSPECT.format(prenom=prenom)
-                recipients = [{"entityUrn": c.get("entityUrn", f"urn:li:member:{uid}")}]
-                await asyncio.to_thread(api.send_message, message, recipients)
-                logger.info(f"LinkedIn message envoyé à {prenom} (nouvelle connexion)")
-                await notify_john(f"🤝 *LinkedIn* — Nouvelle connexion acceptée !\n👤 {prenom}\n💬 Message de prospection envoyé automatiquement")
-                await asyncio.sleep(random.uniform(30, 60))
-            except Exception as e:
-                logger.error(f"Erreur message nouvelle connexion LinkedIn: {e}")
-        save_known_connections(current_ids)
-    except Exception as e:
-        logger.error(f"Erreur vérification connexions LinkedIn: {e}")
-        if "LINKEDIN_CHALLENGE" in str(e):
-            await notify_john(LINKEDIN_CHALLENGE_MSG)
 
 async def linkedin_post():
     try:
@@ -359,33 +190,6 @@ async def linkedin_post():
         else:
             await notify_john(f"❌ *LinkedIn* post erreur: {str(e)[:200]}")
 
-async def linkedin_prospect():
-    try:
-        api = await asyncio.to_thread(get_linkedin_api)
-        keyword = random.choice(KEYWORDS_LINKEDIN)
-        people = await asyncio.to_thread(api.search_people, keyword, PROSPECTS_PER_DAY * 2)
-        count = 0
-        for person in people:
-            if count >= PROSPECTS_PER_DAY:
-                break
-            try:
-                profile_id = person.get("public_id", "")
-                prenom = person.get("firstName", "vous")
-                if not profile_id:
-                    continue
-                api.add_connection(profile_id)
-                count += 1
-                logger.info(f"LinkedIn invitation envoyée à {prenom}")
-                await asyncio.sleep(random.uniform(40, 90))
-            except Exception as e:
-                logger.error(f"LinkedIn prospect individuel: {e}")
-        await notify_john(f"✅ *LinkedIn* — {count} invitations envoyées (mot-clé: {keyword})")
-    except Exception as e:
-        logger.error(f"Erreur LinkedIn prospecting: {e}")
-        if "LINKEDIN_CHALLENGE" in str(e):
-            await notify_john(LINKEDIN_CHALLENGE_MSG)
-        else:
-            await notify_john(f"❌ *LinkedIn* prospecting erreur: {str(e)[:200]}")
 
 # ─── INSTAGRAM ────────────────────────────────────────────────────────────────
 async def instagram_post():
@@ -411,36 +215,6 @@ async def instagram_post():
         logger.error(f"Erreur Instagram post: {e}")
         await notify_john(f"❌ *Instagram* post erreur: {str(e)[:200]}")
 
-async def instagram_prospect():
-    if not insta_client:
-        await notify_john("⚠️ *Instagram* — Client non connecté, prospecting ignoré")
-        return
-    try:
-        hashtag = random.choice(KEYWORDS_INSTAGRAM)
-        medias = insta_client.hashtag_medias_top(hashtag, amount=30)
-        count = 0
-        done_users = set()
-        for media in medias:
-            if count >= PROSPECTS_PER_DAY:
-                break
-            try:
-                user_id = media.user.pk
-                if user_id in done_users:
-                    continue
-                done_users.add(user_id)
-                user_info = insta_client.user_info(user_id)
-                prenom = user_info.full_name.split()[0] if user_info.full_name else "vous"
-                message = MESSAGE_PROSPECT.format(prenom=prenom)
-                insta_client.direct_send(message, [user_id])
-                count += 1
-                logger.info(f"Instagram DM envoyé à {prenom}")
-                await asyncio.sleep(random.uniform(90, 180))
-            except Exception as e:
-                logger.error(f"Instagram prospect individuel: {e}")
-        await notify_john(f"✅ *Instagram* — {count} DMs envoyés (#{hashtag})")
-    except Exception as e:
-        logger.error(f"Erreur Instagram prospecting: {e}")
-        await notify_john(f"❌ *Instagram* prospecting erreur: {str(e)[:200]}")
 
 # ─── INSTAGRAM STORIES ───────────────────────────────────────────────────────
 
@@ -594,30 +368,6 @@ async def twitter_post():
         logger.error(f"Erreur Twitter post: {e}")
         await notify_john(f"❌ *Twitter/X* post erreur: {str(e)[:200]}")
 
-async def twitter_prospect():
-    if not twitter_client:
-        await notify_john("⚠️ *Twitter/X* — Client non connecté, prospecting ignoré")
-        return
-    try:
-        keyword = random.choice(KEYWORDS_TWITTER)
-        users = await twitter_client.search_user(keyword, count=PROSPECTS_PER_DAY * 2)
-        count = 0
-        for user in users:
-            if count >= PROSPECTS_PER_DAY:
-                break
-            try:
-                prenom = user.name.split()[0] if user.name else "vous"
-                message = MESSAGE_PROSPECT.format(prenom=prenom)
-                await twitter_client.send_dm(user.id, message)
-                count += 1
-                logger.info(f"Twitter DM envoyé à {prenom}")
-                await asyncio.sleep(random.uniform(60, 120))
-            except Exception as e:
-                logger.error(f"Twitter prospect individuel: {e}")
-        await notify_john(f"✅ *Twitter/X* — {count} DMs envoyés (mot-clé: {keyword})")
-    except Exception as e:
-        logger.error(f"Erreur Twitter prospecting: {e}")
-        await notify_john(f"❌ *Twitter/X* prospecting erreur: {str(e)[:200]}")
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 async def main():
@@ -627,17 +377,6 @@ async def main():
     scheduler.add_job(linkedin_post,    'cron', hour=8,  minute=0)
     scheduler.add_job(instagram_post,   'cron', hour=12, minute=0)
     scheduler.add_job(twitter_post,     'cron', hour=18, minute=0)
-
-    # Prospecting quotidien
-    scheduler.add_job(linkedin_prospect,  'cron', hour=9,  minute=30)
-    scheduler.add_job(instagram_prospect, 'cron', hour=14, minute=0)
-    scheduler.add_job(twitter_prospect,   'cron', hour=16, minute=0)
-
-    # Vérification nouvelles connexions LinkedIn toutes les 6h
-    scheduler.add_job(linkedin_check_new_connections, 'interval', hours=6)
-
-    # Réponses IA aux messages LinkedIn toutes les 2h
-    scheduler.add_job(linkedin_handle_messages, 'interval', hours=2)
 
     # Stories Instagram 3x/jour
     scheduler.add_job(instagram_post_story, 'cron', hour=9,  minute=0)
@@ -660,7 +399,7 @@ async def main():
 
     scheduler.start()
     logger.info("✅ Bot Réseaux Sociaux Project Inves'T démarré !")
-    await notify_john("🚀 *Bot Réseaux Sociaux* démarré !\n\nPublications et prospecting actifs sur LinkedIn, Instagram et Twitter/X.")
+    await notify_john("🚀 *Bot Réseaux Sociaux* démarré !\n\nPublications automatiques actives sur LinkedIn, Instagram et Twitter/X.")
 
     await asyncio.Event().wait()
 
